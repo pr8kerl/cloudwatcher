@@ -1,32 +1,175 @@
 package main
 
 import (
-	"bytes"
+	//	"bytes"
 	"fmt"
-	"time"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"strings"
+	"time"
 )
+
+var (
+	prevTick     time.Time
+	pollperiod   int64         = 5
+	pollduration time.Duration = 5               // minutes
+	granularity  int64         = pollperiod * 60 // seconds
+	myMetrics    []*cloudwatch.Metric
+	namespace    string
+	namespacestr string
+	svc          *cloudwatch.CloudWatch
+	gprefix      string = "test.aws.cloudwatch."
+)
+
+/*
+		{ // Required
+			Name:  aws.String("AutoScalingGroupName"), // Required
+			Value: aws.String("vpc-mgmt-prod-SplunkUFAutoScalingGroup-1X0RAH90CM48E"),
+		},
+		// More values...
+	},
+	//		MetricName: aws.String("CPUUtilization"),
+	Namespace: aws.String("AWS-EC2"),
+	//		NextToken:  aws.String("NextToken"),
+*/
+
+func init() {
+	prevTick = time.Now()
+	namespace = "AWS/EC2"
+	namespacestr = "ec2"
+}
 
 func main() {
 
+	getAvailableMetrics()
+
+	for {
+		//		timetunnel := make(chan string, 1)
+		//		select {
+		//		case res := <-timetunnel:
+		//			fmt.Printf("result: %s\n", res)
+		now := <-time.After(pollduration * time.Minute)
+		fmt.Printf("\n\ntimeout time to poll for stats\n")
+		svc = cloudwatch.New(session.New())
+		for _, metric := range myMetrics {
+			getMetric(metric, prevTick, now)
+		}
+		//		for _, metric := range myMetrics {
+		//			fmt.Printf("metric: %v\n", metric)
+		//			getStatistic(metric, prevTick, now)
+		//		}
+		prevTick = now
+		//		}
+
+	}
+
+}
+
+func getAvailableMetrics() {
+
 	svc := cloudwatch.New(session.New())
 
-	params := &cloudwatch.ListMetricsInput{
-		Dimensions: []*cloudwatch.DimensionFilter{
+	var params *cloudwatch.ListMetricsInput
+	if len(namespace) > 0 {
+		params = &cloudwatch.ListMetricsInput{
+			//		Dimensions: []*cloudwatch.DimensionFilter{
+			//			{ // Required
+			//				Name:  aws.String(""), // Required
+			//				Value: aws.String(""),
+			//			},
+			//		},
+			//		MetricName: aws.String("CPUUtilization"),
+			Namespace: aws.String(namespace),
+		}
+	} else {
+		// empty - gets everything
+		params = &cloudwatch.ListMetricsInput{}
+	}
+
+	resp, err := svc.ListMetrics(params)
+	if err != nil {
+		// Print the error, cast err to awserr.Error to get the Code and
+		// Message from an error.
+		fmt.Println(err.Error())
+		return
+	}
+
+	myMetrics = resp.Metrics
+	for resp.NextToken != nil {
+
+		fmt.Println("\n\nmore metrics available")
+		// get more metrics
+		// append resp.Metrics to myMetrics
+		if len(namespace) > 0 {
+			params = &cloudwatch.ListMetricsInput{
+				//		Dimensions: []*cloudwatch.DimensionFilter{
+				//			{ // Required
+				//				Name:  aws.String(""), // Required
+				//				Value: aws.String(""),
+				//			},
+				//		},
+				//		MetricName: aws.String("CPUUtilization"),
+				Namespace: aws.String(namespace),
+				NextToken: resp.NextToken,
+			}
+		} else {
+			// empty - gets everything
+			params = &cloudwatch.ListMetricsInput{
+				NextToken: resp.NextToken,
+			}
+		}
+		resp, err = svc.ListMetrics(params)
+		if err != nil {
+			// Print the error, cast err to awserr.Error to get the Code and
+			// Message from an error.
+			fmt.Println(err.Error())
+		}
+
+		//fmt.Println(resp.Metrics)
+		myMetrics = append(myMetrics, resp.Metrics...)
+
+	}
+
+	//	fmt.Printf("num metrics: %d\n", len(myMetrics))
+
+	// Pretty-print the response data.
+	//fmt.Println(myMetrics)
+
+}
+
+func getMetric(metric *cloudwatch.Metric, from time.Time, to time.Time) {
+
+	if metric.Dimensions == nil {
+		return
+	}
+
+	// ignore statuschecks
+	if strings.HasPrefix(*metric.MetricName, "StatusCheck") {
+		return
+	}
+
+	params := &cloudwatch.GetMetricStatisticsInput{
+		EndTime:    aws.Time(to),      // Required
+		MetricName: metric.MetricName, // Required
+		Namespace:  metric.Namespace,
+		Period:     aws.Int64(granularity), // Required
+		StartTime:  aws.Time(from),         // Required
+		Statistics: []*string{ // Required
+			aws.String("Maximum"),
+			aws.String("Average"),
+			//aws.String("Sum"),
+			// More values...
+		},
+		Dimensions: []*cloudwatch.Dimension{
 			{ // Required
-				Name:  aws.String("AutoScalingGroupName"), // Required
-				Value: aws.String("vpc-mgmt-prod-SplunkUFAutoScalingGroup-1X0RAH90CM48E"),
+				Name:  metric.Dimensions[0].Name,
+				Value: metric.Dimensions[0].Value,
 			},
 			// More values...
 		},
-		//		MetricName: aws.String("MetricName"),
-		//		Namespace:  aws.String("Namespace"),
-		//		NextToken:  aws.String("NextToken"),
 	}
-	resp, err := svc.ListMetrics(params)
+	resp, err := svc.GetMetricStatistics(params)
 
 	if err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
@@ -36,6 +179,30 @@ func main() {
 	}
 
 	// Pretty-print the response data.
-	fmt.Println(resp)
+	//fmt.Println(resp)
+
+	if resp.Datapoints != nil {
+		for _, datapoint := range resp.Datapoints {
+			gpoint := gprefix + namespacestr + "." + *metric.Dimensions[0].Name + "." + *metric.Dimensions[0].Value + "." + *metric.MetricName
+			gpoint = gpoint + "." + *datapoint.Unit + "."
+			tstamp := fmt.Sprintf("%d", datapoint.Timestamp.Unix())
+			fmt.Printf("%sMaximum %f %s\n", gpoint, *datapoint.Maximum, tstamp)
+			fmt.Printf("%sAverage %f %s\n", gpoint, *datapoint.Average, tstamp)
+			//fmt.Printf("%sSum %f %s\n", gpoint, *datapoint.Sum, tstamp)
+		}
+
+		/*
+		   {
+		     Datapoints: [{
+		         Average: 2.701533e+06,
+		         Maximum: 3.642292e+06,
+		         Timestamp: 2016-03-06 07:05:00 +0000 UTC,
+		         Unit: "Bytes"
+		       }],
+		     Label: "NetworkOut"
+		   }
+		*/
+
+	}
 
 }

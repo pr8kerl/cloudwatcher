@@ -5,22 +5,10 @@ import (
 	"io/ioutil"
 )
 
-type Account struct {
-	AccountId   int    `json:"accountId"`
-	AccountName string `json:"accountName"`
-	AccessKey   string `json:"accessKey"`
-	SecretKey   string `json:"secretKey"`
-}
-
-type GraphiteCfg struct {
-	InstanceStem string `json:"instancestem"`
-}
-
 type Config struct {
-	Accounts []Account   `json:"accounts"`
-	Regions  []string    `json:"regions"`
-	Debug    bool        `json:"debug,omitempty"`
-	Graphite GraphiteCfg `json:"graphite,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	Profile   string `json:"profile"`
+	Prefix    string `json:"prefix"`
 }
 
 func InitialiseConfig(cfg string) (err error) {
