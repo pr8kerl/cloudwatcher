@@ -6,6 +6,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"os"
 	"strings"
 	"time"
 )
@@ -15,7 +16,7 @@ var (
 	pollperiod   int64         = 5
 	pollduration time.Duration = 5               // minutes
 	granularity  int64         = pollperiod * 60 // seconds
-	myMetrics    []*cloudwatch.Metric
+	metrics      []*cloudwatch.Metric
 	namespace    string
 	namespacestr string
 	svc          *cloudwatch.CloudWatch
@@ -42,7 +43,13 @@ func init() {
 
 func main() {
 
-	getAvailableMetrics()
+	metrics, err := getAvailableMetrics()
+	if err != nil {
+		// Print the error, cast err to awserr.Error to get the Code and
+		// Message from an error.
+		fmt.Printf("error requesting available metrics: %s\n", err.Error())
+		os.Exit(1)
+	}
 
 	for {
 		//		timetunnel := make(chan string, 1)
@@ -52,10 +59,10 @@ func main() {
 		now := <-time.After(pollduration * time.Minute)
 		fmt.Printf("\n\ntimeout time to poll for stats\n")
 		svc = cloudwatch.New(session.New())
-		for _, metric := range myMetrics {
+		for _, metric := range metrics {
 			getMetric(metric, prevTick, now)
 		}
-		//		for _, metric := range myMetrics {
+		//		for _, metric := range metrics {
 		//			fmt.Printf("metric: %v\n", metric)
 		//			getStatistic(metric, prevTick, now)
 		//		}
@@ -66,7 +73,7 @@ func main() {
 
 }
 
-func getAvailableMetrics() {
+func getAvailableMetrics() ([]*cloudwatch.Metric, error) {
 
 	svc := cloudwatch.New(session.New())
 
@@ -92,15 +99,15 @@ func getAvailableMetrics() {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
-		return
+		return nil, err
 	}
 
-	myMetrics = resp.Metrics
+	metrics = resp.Metrics
 	for resp.NextToken != nil {
 
 		fmt.Println("\n\nmore metrics available")
 		// get more metrics
-		// append resp.Metrics to myMetrics
+		// append resp.Metrics to metrics
 		if len(namespace) > 0 {
 			params = &cloudwatch.ListMetricsInput{
 				//		Dimensions: []*cloudwatch.DimensionFilter{
@@ -124,17 +131,19 @@ func getAvailableMetrics() {
 			// Print the error, cast err to awserr.Error to get the Code and
 			// Message from an error.
 			fmt.Println(err.Error())
+			return nil, err
 		}
 
 		//fmt.Println(resp.Metrics)
-		myMetrics = append(myMetrics, resp.Metrics...)
+		metrics = append(metrics, resp.Metrics...)
 
 	}
 
-	//	fmt.Printf("num metrics: %d\n", len(myMetrics))
+	//	fmt.Printf("num metrics: %d\n", len(metrics))
 
 	// Pretty-print the response data.
-	//fmt.Println(myMetrics)
+	//fmt.Println(metrics)
+	return metrics, nil
 
 }
 
