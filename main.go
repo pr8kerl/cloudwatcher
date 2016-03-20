@@ -16,11 +16,10 @@ var (
 	pollperiod   int64         = 5
 	pollduration time.Duration = 5               // minutes
 	granularity  int64         = pollperiod * 60 // seconds
-	metrics      []*cloudwatch.Metric
-	namespace    string
-	namespacestr string
+	metrics      map[string][]*cloudwatch.Metric
 	svc          *cloudwatch.CloudWatch
 	gprefix      string = "test.aws.cloudwatch."
+	namespaces   map[string]string
 )
 
 /*
@@ -37,18 +36,26 @@ var (
 
 func init() {
 	prevTick = time.Now()
-	namespace = "AWS/EC2"
-	namespacestr = "ec2"
+	namespaces = make(map[string]string)
+	metrics = make(map[string][]*cloudwatch.Metric)
+	namespaces["AWS/EC2"] = "ec2"
+	namespaces["AWS/ELB"] = "elb"
+	namespaces["AWS/EBS"] = "ebs"
+	namespaces["AWS/CloudFront"] = "cloudfront"
+	namespaces["AWS/ES"] = "elasticsearch"
 }
 
 func main() {
 
-	metrics, err := getAvailableMetrics()
-	if err != nil {
-		// Print the error, cast err to awserr.Error to get the Code and
-		// Message from an error.
-		fmt.Printf("error requesting available metrics: %s\n", err.Error())
-		os.Exit(1)
+	for namespace, shortnamespace := range namespaces {
+		thesemetrics, err := getAvailableMetrics(namespace)
+		if err != nil {
+			// Print the error, cast err to awserr.Error to get the Code and
+			// Message from an error.
+			fmt.Printf("error requesting available %s metrics: %s\n", shortnamespace, err.Error())
+			os.Exit(1)
+		}
+		metrics[namespace] = thesemetrics
 	}
 
 	for {
@@ -57,10 +64,12 @@ func main() {
 		//		case res := <-timetunnel:
 		//			fmt.Printf("result: %s\n", res)
 		now := <-time.After(pollduration * time.Minute)
-		fmt.Printf("\n\ntimeout time to poll for stats\n")
+		fmt.Printf("\n\ntimeout: time to poll for stats\n")
 		svc = cloudwatch.New(session.New())
-		for _, metric := range metrics {
-			getMetric(metric, prevTick, now)
+		for namespace, shortnamespace := range namespaces {
+			for _, metric := range metrics[namespace] {
+				getMetric(metric, shortnamespace, prevTick, now)
+			}
 		}
 		//		for _, metric := range metrics {
 		//			fmt.Printf("metric: %v\n", metric)
@@ -73,25 +82,20 @@ func main() {
 
 }
 
-func getAvailableMetrics() ([]*cloudwatch.Metric, error) {
+func getAvailableMetrics(namespace string) ([]*cloudwatch.Metric, error) {
 
 	svc := cloudwatch.New(session.New())
 
 	var params *cloudwatch.ListMetricsInput
-	if len(namespace) > 0 {
-		params = &cloudwatch.ListMetricsInput{
-			//		Dimensions: []*cloudwatch.DimensionFilter{
-			//			{ // Required
-			//				Name:  aws.String(""), // Required
-			//				Value: aws.String(""),
-			//			},
-			//		},
-			//		MetricName: aws.String("CPUUtilization"),
-			Namespace: aws.String(namespace),
-		}
-	} else {
-		// empty - gets everything
-		params = &cloudwatch.ListMetricsInput{}
+	params = &cloudwatch.ListMetricsInput{
+		//		Dimensions: []*cloudwatch.DimensionFilter{
+		//			{ // Required
+		//				Name:  aws.String(""), // Required
+		//				Value: aws.String(""),
+		//			},
+		//		},
+		//		MetricName: aws.String("CPUUtilization"),
+		Namespace: aws.String(namespace),
 	}
 
 	resp, err := svc.ListMetrics(params)
@@ -102,30 +106,24 @@ func getAvailableMetrics() ([]*cloudwatch.Metric, error) {
 		return nil, err
 	}
 
-	metrics = resp.Metrics
+	tmetrics := resp.Metrics
 	for resp.NextToken != nil {
 
 		fmt.Println("\n\nmore metrics available")
 		// get more metrics
 		// append resp.Metrics to metrics
-		if len(namespace) > 0 {
-			params = &cloudwatch.ListMetricsInput{
-				//		Dimensions: []*cloudwatch.DimensionFilter{
-				//			{ // Required
-				//				Name:  aws.String(""), // Required
-				//				Value: aws.String(""),
-				//			},
-				//		},
-				//		MetricName: aws.String("CPUUtilization"),
-				Namespace: aws.String(namespace),
-				NextToken: resp.NextToken,
-			}
-		} else {
-			// empty - gets everything
-			params = &cloudwatch.ListMetricsInput{
-				NextToken: resp.NextToken,
-			}
+		params = &cloudwatch.ListMetricsInput{
+			//		Dimensions: []*cloudwatch.DimensionFilter{
+			//			{ // Required
+			//				Name:  aws.String(""), // Required
+			//				Value: aws.String(""),
+			//			},
+			//		},
+			//		MetricName: aws.String("CPUUtilization"),
+			Namespace: aws.String(namespace),
+			NextToken: resp.NextToken,
 		}
+
 		resp, err = svc.ListMetrics(params)
 		if err != nil {
 			// Print the error, cast err to awserr.Error to get the Code and
@@ -135,7 +133,7 @@ func getAvailableMetrics() ([]*cloudwatch.Metric, error) {
 		}
 
 		//fmt.Println(resp.Metrics)
-		metrics = append(metrics, resp.Metrics...)
+		tmetrics = append(tmetrics, resp.Metrics...)
 
 	}
 
@@ -143,11 +141,11 @@ func getAvailableMetrics() ([]*cloudwatch.Metric, error) {
 
 	// Pretty-print the response data.
 	//fmt.Println(metrics)
-	return metrics, nil
+	return tmetrics, nil
 
 }
 
-func getMetric(metric *cloudwatch.Metric, from time.Time, to time.Time) {
+func getMetric(metric *cloudwatch.Metric, namespacestr string, from time.Time, to time.Time) {
 
 	if metric.Dimensions == nil {
 		return
