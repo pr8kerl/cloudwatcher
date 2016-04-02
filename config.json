@@ -1,0 +1,14 @@
+{
+  "profile": "its-production",
+  "region": "ap-southeast-2",
+  "prefix": "aws.cloudwatch.its-production",
+  "pollperiod": 5,
+  "namespaces": {
+    "AWS/EC2": "ec2",
+    "AWS/ELB": "elb",
+    "AWS/EBS": "ebs",
+    "AWS/CloudFront": "cloudfront",
+    "AWS/ES": "elasticsearch",
+    "Linux System": "linux"
+  }
+}

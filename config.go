@@ -6,9 +6,10 @@ import (
 )
 
 type Config struct {
-	Namespace string `json:"namespace,omitempty"`
-	Profile   string `json:"profile"`
-	Prefix    string `json:"prefix"`
+	Profile    string            `json:"profile"`
+	Prefix     string            `json:"prefix"`
+	PollPeriod int64             `json:"pollperiod"`
+	Namespaces map[string]string `json:"namespaces"`
 }
 
 func InitialiseConfig(cfg string) (err error) {

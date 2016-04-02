@@ -12,7 +12,7 @@ all: cloudwatcher
 deps: $(DEPS)
 	GOPATH=$(GOPATH) go get -u $^
 
-cloudwatcher: main.go
+cloudwatcher: main.go config.go
     # always format code
 		GOPATH=$(GOPATH) go fmt $^
     # vet it
@@ -28,9 +28,9 @@ win64: main.go config.go object.go
 		GOPATH=$(GOPATH) $(GO) tool vet $^
 		# binary
 		GOOS=windows GOARCH=amd64 GOPATH=$(GOPATH) go build $(LDFLAGS) -o server-win-amd64.exe -v $^
-		touch server-win-amd64.exe
+		touch cloudwatcher-win-amd64.exe
 
 .PHONY: $(DEPS) clean
 
 clean:
-	rm -f server server-win-amd64.exe
+	rm -f cloudwatcher cloudwatcher-win-amd64.exe

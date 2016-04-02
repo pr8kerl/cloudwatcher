@@ -12,14 +12,10 @@ import (
 )
 
 var (
-	prevTick     time.Time
-	pollperiod   int64         = 5
-	pollduration time.Duration = 5               // minutes
-	granularity  int64         = pollperiod * 60 // seconds
-	metrics      map[string][]*cloudwatch.Metric
-	svc          *cloudwatch.CloudWatch
-	gprefix      string = "test.aws.cloudwatch."
-	namespaces   map[string]string
+	prevTick time.Time
+	metrics  map[string][]*cloudwatch.Metric
+	svc      *cloudwatch.CloudWatch
+	config   Config
 )
 
 /*
@@ -36,18 +32,18 @@ var (
 
 func init() {
 	prevTick = time.Now()
-	namespaces = make(map[string]string)
 	metrics = make(map[string][]*cloudwatch.Metric)
-	namespaces["AWS/EC2"] = "ec2"
-	namespaces["AWS/ELB"] = "elb"
-	namespaces["AWS/EBS"] = "ebs"
-	namespaces["AWS/CloudFront"] = "cloudfront"
-	namespaces["AWS/ES"] = "elasticsearch"
 }
 
 func main() {
 
-	for namespace, shortnamespace := range namespaces {
+	err := InitialiseConfig("config.json")
+	if err != nil {
+		fmt.Printf("error parsing config: %s\n", err)
+		os.Exit(1)
+	}
+
+	for namespace, shortnamespace := range config.Namespaces {
 		thesemetrics, err := getAvailableMetrics(namespace)
 		if err != nil {
 			// Print the error, cast err to awserr.Error to get the Code and
@@ -63,12 +59,12 @@ func main() {
 		//		select {
 		//		case res := <-timetunnel:
 		//			fmt.Printf("result: %s\n", res)
-		now := <-time.After(pollduration * time.Minute)
+		now := <-time.After(time.Duration(config.PollPeriod) * time.Minute)
 		fmt.Printf("\n\ntimeout: time to poll for stats\n")
 		svc = cloudwatch.New(session.New())
-		for namespace, shortnamespace := range namespaces {
+		for namespace, _ := range config.Namespaces {
 			for _, metric := range metrics[namespace] {
-				getMetric(metric, shortnamespace, prevTick, now)
+				getMetric(metric, prevTick, now)
 			}
 		}
 		//		for _, metric := range metrics {
@@ -145,7 +141,7 @@ func getAvailableMetrics(namespace string) ([]*cloudwatch.Metric, error) {
 
 }
 
-func getMetric(metric *cloudwatch.Metric, namespacestr string, from time.Time, to time.Time) {
+func getMetric(metric *cloudwatch.Metric, from time.Time, to time.Time) {
 
 	if metric.Dimensions == nil {
 		return
@@ -160,12 +156,12 @@ func getMetric(metric *cloudwatch.Metric, namespacestr string, from time.Time, t
 		EndTime:    aws.Time(to),      // Required
 		MetricName: metric.MetricName, // Required
 		Namespace:  metric.Namespace,
-		Period:     aws.Int64(granularity), // Required
-		StartTime:  aws.Time(from),         // Required
+		Period:     aws.Int64(config.PollPeriod * 60), // Required
+		StartTime:  aws.Time(from),                    // Required
 		Statistics: []*string{ // Required
 			aws.String("Maximum"),
 			aws.String("Average"),
-			//aws.String("Sum"),
+			aws.String("Sum"),
 			// More values...
 		},
 		Dimensions: []*cloudwatch.Dimension{
@@ -190,12 +186,14 @@ func getMetric(metric *cloudwatch.Metric, namespacestr string, from time.Time, t
 
 	if resp.Datapoints != nil {
 		for _, datapoint := range resp.Datapoints {
-			gpoint := gprefix + namespacestr + "." + *metric.Dimensions[0].Name + "." + *metric.Dimensions[0].Value + "." + *metric.MetricName
+			gpoint := config.Prefix + "." + config.Namespaces[*metric.Namespace] + "." + *metric.Dimensions[0].Name + "." + *metric.Dimensions[0].Value + "." + *metric.MetricName
 			gpoint = gpoint + "." + *datapoint.Unit + "."
 			tstamp := fmt.Sprintf("%d", datapoint.Timestamp.Unix())
 			fmt.Printf("%sMaximum %f %s\n", gpoint, *datapoint.Maximum, tstamp)
 			fmt.Printf("%sAverage %f %s\n", gpoint, *datapoint.Average, tstamp)
-			//fmt.Printf("%sSum %f %s\n", gpoint, *datapoint.Sum, tstamp)
+			if datapoint.Sum != nil {
+				fmt.Printf("%sSum %f %s\n", gpoint, *datapoint.Sum, tstamp)
+			}
 		}
 
 		/*
