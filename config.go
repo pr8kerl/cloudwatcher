@@ -7,6 +7,7 @@ import (
 
 type Config struct {
 	Profile    string            `json:"profile"`
+	Region     string            `json:"region"`
 	Prefix     string            `json:"prefix"`
 	PollPeriod int64             `json:"pollperiod"`
 	Namespaces map[string]string `json:"namespaces"`

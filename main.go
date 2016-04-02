@@ -4,6 +4,7 @@ import (
 	//	"bytes"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"os"
@@ -43,6 +44,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	awscfg := aws.NewConfig().WithRegion(config.Region).WithCredentials(credentials.NewSharedCredentials("", config.Profile))
+	svc = cloudwatch.New(session.New(awscfg))
+
 	for namespace, shortnamespace := range config.Namespaces {
 		thesemetrics, err := getAvailableMetrics(namespace)
 		if err != nil {
@@ -61,7 +65,6 @@ func main() {
 		//			fmt.Printf("result: %s\n", res)
 		now := <-time.After(time.Duration(config.PollPeriod) * time.Minute)
 		fmt.Printf("\n\ntimeout: time to poll for stats\n")
-		svc = cloudwatch.New(session.New())
 		for namespace, _ := range config.Namespaces {
 			for _, metric := range metrics[namespace] {
 				getMetric(metric, prevTick, now)
@@ -79,8 +82,6 @@ func main() {
 }
 
 func getAvailableMetrics(namespace string) ([]*cloudwatch.Metric, error) {
-
-	svc := cloudwatch.New(session.New())
 
 	var params *cloudwatch.ListMetricsInput
 	params = &cloudwatch.ListMetricsInput{
