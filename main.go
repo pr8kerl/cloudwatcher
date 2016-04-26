@@ -57,6 +57,11 @@ func main() {
 		}
 		metrics[namespace] = thesemetrics
 	}
+	// Pretty-print the response data.
+	if config.Debug {
+		fmt.Fprintf(os.Stderr, "%s\n", metrics)
+		fmt.Fprintf(os.Stderr, "time to gather some stats\n")
+	}
 
 	for {
 		//		timetunnel := make(chan string, 1)
@@ -85,13 +90,6 @@ func getAvailableMetrics(namespace string) ([]*cloudwatch.Metric, error) {
 
 	var params *cloudwatch.ListMetricsInput
 	params = &cloudwatch.ListMetricsInput{
-		//		Dimensions: []*cloudwatch.DimensionFilter{
-		//			{ // Required
-		//				Name:  aws.String(""), // Required
-		//				Value: aws.String(""),
-		//			},
-		//		},
-		//		MetricName: aws.String("CPUUtilization"),
 		Namespace: aws.String(namespace),
 	}
 
@@ -109,13 +107,6 @@ func getAvailableMetrics(namespace string) ([]*cloudwatch.Metric, error) {
 		// get more metrics
 		// append resp.Metrics to metrics
 		params = &cloudwatch.ListMetricsInput{
-			//		Dimensions: []*cloudwatch.DimensionFilter{
-			//			{ // Required
-			//				Name:  aws.String(""), // Required
-			//				Value: aws.String(""),
-			//			},
-			//		},
-			//		MetricName: aws.String("CPUUtilization"),
 			Namespace: aws.String(namespace),
 			NextToken: resp.NextToken,
 		}
@@ -135,10 +126,6 @@ func getAvailableMetrics(namespace string) ([]*cloudwatch.Metric, error) {
 
 	//	fmt.Printf("num metrics: %d\n", len(metrics))
 
-	// Pretty-print the response data.
-	if config.Debug {
-		fmt.Fprintf(os.Stderr, "%s\n", metrics)
-	}
 	return tmetrics, nil
 
 }
@@ -166,13 +153,7 @@ func getMetric(metric *cloudwatch.Metric, from time.Time, to time.Time) {
 			aws.String("Sum"),
 			// More values...
 		},
-		Dimensions: []*cloudwatch.Dimension{
-			{ // Required
-				Name:  metric.Dimensions[0].Name,
-				Value: metric.Dimensions[0].Value,
-			},
-			// More values...
-		},
+		Dimensions: metric.Dimensions,
 	}
 	resp, err := svc.GetMetricStatistics(params)
 
@@ -188,13 +169,15 @@ func getMetric(metric *cloudwatch.Metric, from time.Time, to time.Time) {
 
 	if resp.Datapoints != nil {
 		for _, datapoint := range resp.Datapoints {
-			gpoint := config.Prefix + "." + config.Namespaces[*metric.Namespace] + "." + *metric.Dimensions[0].Name + "." + *metric.Dimensions[0].Value + "." + *metric.MetricName
-			gpoint = gpoint + "." + *datapoint.Unit + "."
-			tstamp := fmt.Sprintf("%d", datapoint.Timestamp.Unix())
-			fmt.Printf("%sMaximum %f %s\n", gpoint, *datapoint.Maximum, tstamp)
-			fmt.Printf("%sAverage %f %s\n", gpoint, *datapoint.Average, tstamp)
-			if datapoint.Sum != nil {
-				fmt.Printf("%sSum %f %s\n", gpoint, *datapoint.Sum, tstamp)
+			for _, dim := range metric.Dimensions {
+				gpoint := config.Prefix + "." + config.Namespaces[*metric.Namespace] + "." + *dim.Name + "." + *dim.Value + "." + *metric.MetricName
+				gpoint = gpoint + "." + *datapoint.Unit + "."
+				tstamp := fmt.Sprintf("%d", datapoint.Timestamp.Unix())
+				fmt.Printf("%sMaximum %f %s\n", gpoint, *datapoint.Maximum, tstamp)
+				fmt.Printf("%sAverage %f %s\n", gpoint, *datapoint.Average, tstamp)
+				if datapoint.Sum != nil {
+					fmt.Printf("%sSum %f %s\n", gpoint, *datapoint.Sum, tstamp)
+				}
 			}
 		}
 
