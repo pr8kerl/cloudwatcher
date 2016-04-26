@@ -40,7 +40,7 @@ func main() {
 
 	err := InitialiseConfig("config.json")
 	if err != nil {
-		fmt.Printf("error parsing config: %s\n", err)
+		fmt.Fprintf(os.Stderr, "error parsing config: %s\n", err)
 		os.Exit(1)
 	}
 
@@ -52,7 +52,7 @@ func main() {
 		if err != nil {
 			// Print the error, cast err to awserr.Error to get the Code and
 			// Message from an error.
-			fmt.Printf("error requesting available %s metrics: %s\n", shortnamespace, err.Error())
+			fmt.Fprintf(os.Stderr, "error requesting available %s metrics: %s\n", shortnamespace, err.Error())
 			os.Exit(1)
 		}
 		metrics[namespace] = thesemetrics
@@ -64,7 +64,7 @@ func main() {
 		//		case res := <-timetunnel:
 		//			fmt.Printf("result: %s\n", res)
 		now := <-time.After(time.Duration(config.PollPeriod) * time.Minute)
-		fmt.Printf("\n\ntimeout: time to poll for stats\n")
+		fmt.Fprintf(os.Stderr, "timeout: time to poll for stats\n")
 		for namespace, _ := range config.Namespaces {
 			for _, metric := range metrics[namespace] {
 				getMetric(metric, prevTick, now)
@@ -99,14 +99,13 @@ func getAvailableMetrics(namespace string) ([]*cloudwatch.Metric, error) {
 	if err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
-		fmt.Println(err.Error())
+		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 		return nil, err
 	}
 
 	tmetrics := resp.Metrics
 	for resp.NextToken != nil {
 
-		fmt.Println("\n\nmore metrics available")
 		// get more metrics
 		// append resp.Metrics to metrics
 		params = &cloudwatch.ListMetricsInput{
@@ -125,7 +124,7 @@ func getAvailableMetrics(namespace string) ([]*cloudwatch.Metric, error) {
 		if err != nil {
 			// Print the error, cast err to awserr.Error to get the Code and
 			// Message from an error.
-			fmt.Println(err.Error())
+			fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 			return nil, err
 		}
 
@@ -137,7 +136,9 @@ func getAvailableMetrics(namespace string) ([]*cloudwatch.Metric, error) {
 	//	fmt.Printf("num metrics: %d\n", len(metrics))
 
 	// Pretty-print the response data.
-	//fmt.Println(metrics)
+	if config.Debug {
+		fmt.Fprintf(os.Stderr, "%s\n", metrics)
+	}
 	return tmetrics, nil
 
 }
@@ -178,12 +179,12 @@ func getMetric(metric *cloudwatch.Metric, from time.Time, to time.Time) {
 	if err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
-		fmt.Println(err.Error())
+		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 		return
 	}
 
 	// Pretty-print the response data.
-	//fmt.Println(resp)
+	//fmt.Printf(os.Stderr, "%s\n", resp)
 
 	if resp.Datapoints != nil {
 		for _, datapoint := range resp.Datapoints {

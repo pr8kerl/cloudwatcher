@@ -11,6 +11,7 @@ type Config struct {
 	Prefix     string            `json:"prefix"`
 	PollPeriod int64             `json:"pollperiod"`
 	Namespaces map[string]string `json:"namespaces"`
+	Debug      bool              `json:"debug"`
 }
 
 func InitialiseConfig(cfg string) (err error) {
