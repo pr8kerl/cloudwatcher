@@ -6,12 +6,13 @@ import (
 )
 
 type Config struct {
-	Profile    string            `json:"profile"`
-	Region     string            `json:"region"`
-	Prefix     string            `json:"prefix"`
-	PollPeriod int64             `json:"pollperiod"`
-	Namespaces map[string]string `json:"namespaces"`
-	Debug      bool              `json:"debug"`
+	Profile                  string            `json:"profile"`
+	Region                   string            `json:"region"`
+	Prefix                   string            `json:"prefix"`
+	PollInterval             int64             `json:"pollInterval"`
+	Namespaces               map[string]string `json:"namespaces"`
+	Debug                    bool              `json:"debug"`
+	AvailableMetricsInterval int64             `json:"refreshAvailableMetricsInterval"`
 }
 
 func InitialiseConfig(cfg string) (err error) {

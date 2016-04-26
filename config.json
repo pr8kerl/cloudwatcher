@@ -2,7 +2,8 @@
   "profile": "its-production",
   "region": "ap-southeast-2",
   "prefix": "aws.cloudwatch.its-production",
-  "pollperiod": 5,
+  "pollInterval": 5,
+  "refreshAvailableMetricsInterval": 60,
   "debug": false,
   "namespaces": {
     "AWS/EC2": "ec2",

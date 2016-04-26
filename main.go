@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,6 +18,8 @@ var (
 	metrics  map[string][]*cloudwatch.Metric
 	svc      *cloudwatch.CloudWatch
 	config   Config
+	done     chan struct{}
+	mu       sync.Mutex
 )
 
 /*
@@ -34,6 +37,7 @@ var (
 func init() {
 	prevTick = time.Now()
 	metrics = make(map[string][]*cloudwatch.Metric)
+	done = make(chan struct{})
 }
 
 func main() {
@@ -48,14 +52,13 @@ func main() {
 	svc = cloudwatch.New(session.New(awscfg))
 
 	for namespace, shortnamespace := range config.Namespaces {
-		thesemetrics, err := getAvailableMetrics(namespace)
+		metrics[namespace], err = getAvailableMetrics(namespace)
 		if err != nil {
 			// Print the error, cast err to awserr.Error to get the Code and
 			// Message from an error.
 			fmt.Fprintf(os.Stderr, "error requesting available %s metrics: %s\n", shortnamespace, err.Error())
 			os.Exit(1)
 		}
-		metrics[namespace] = thesemetrics
 	}
 	// Pretty-print the response data.
 	if config.Debug {
@@ -63,18 +66,22 @@ func main() {
 		fmt.Fprintf(os.Stderr, "time to gather some stats\n")
 	}
 
+	go updateAvailableMetrics()
+
 	for {
 		//		timetunnel := make(chan string, 1)
 		//		select {
 		//		case res := <-timetunnel:
 		//			fmt.Printf("result: %s\n", res)
-		now := <-time.After(time.Duration(config.PollPeriod) * time.Minute)
+		now := <-time.After(time.Duration(config.PollInterval) * time.Minute)
 		fmt.Fprintf(os.Stderr, "timeout: time to poll for stats\n")
+		mu.Lock()
 		for namespace, _ := range config.Namespaces {
 			for _, metric := range metrics[namespace] {
 				getMetric(metric, prevTick, now)
 			}
 		}
+		mu.Unlock()
 		//		for _, metric := range metrics {
 		//			fmt.Printf("metric: %v\n", metric)
 		//			getStatistic(metric, prevTick, now)
@@ -124,8 +131,6 @@ func getAvailableMetrics(namespace string) ([]*cloudwatch.Metric, error) {
 
 	}
 
-	//	fmt.Printf("num metrics: %d\n", len(metrics))
-
 	return tmetrics, nil
 
 }
@@ -145,8 +150,8 @@ func getMetric(metric *cloudwatch.Metric, from time.Time, to time.Time) {
 		EndTime:    aws.Time(to),      // Required
 		MetricName: metric.MetricName, // Required
 		Namespace:  metric.Namespace,
-		Period:     aws.Int64(config.PollPeriod * 60), // Required
-		StartTime:  aws.Time(from),                    // Required
+		Period:     aws.Int64(config.PollInterval * 60), // Required
+		StartTime:  aws.Time(from),                      // Required
 		Statistics: []*string{ // Required
 			aws.String("Maximum"),
 			aws.String("Average"),
@@ -193,6 +198,31 @@ func getMetric(metric *cloudwatch.Metric, from time.Time, to time.Time) {
 		   }
 		*/
 
+	}
+
+}
+
+func updateAvailableMetrics() int {
+
+	var err error
+	tick := time.Tick(time.Duration(config.AvailableMetricsInterval) * time.Minute)
+	for {
+		select {
+		case <-done:
+			return 0
+		case <-tick:
+			if config.Debug {
+				fmt.Fprintf(os.Stderr, "updating available metrics\n")
+			}
+			for namespace, shortnamespace := range config.Namespaces {
+				mu.Lock()
+				metrics[namespace], err = getAvailableMetrics(namespace)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "error requesting available %s metrics: %s\n", shortnamespace, err.Error())
+				}
+				mu.Unlock()
+			}
+		}
 	}
 
 }
