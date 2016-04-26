@@ -8,8 +8,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -18,7 +20,8 @@ var (
 	metrics  map[string][]*cloudwatch.Metric
 	svc      *cloudwatch.CloudWatch
 	config   Config
-	done     chan struct{}
+	done     chan bool
+	sigs     chan os.Signal
 	mu       sync.Mutex
 )
 
@@ -37,7 +40,8 @@ var (
 func init() {
 	prevTick = time.Now()
 	metrics = make(map[string][]*cloudwatch.Metric)
-	done = make(chan struct{})
+	done = make(chan bool, 1)
+	sigs = make(chan os.Signal, 1)
 }
 
 func main() {
@@ -66,30 +70,46 @@ func main() {
 		fmt.Fprintf(os.Stderr, "time to gather some stats\n")
 	}
 
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
 	go updateAvailableMetrics()
 
-	for {
-		//		timetunnel := make(chan string, 1)
-		//		select {
-		//		case res := <-timetunnel:
-		//			fmt.Printf("result: %s\n", res)
-		now := <-time.After(time.Duration(config.PollInterval) * time.Minute)
-		fmt.Fprintf(os.Stderr, "timeout: time to poll for stats\n")
-		mu.Lock()
-		for namespace, _ := range config.Namespaces {
-			for _, metric := range metrics[namespace] {
-				getMetric(metric, prevTick, now)
+	go func() {
+		for {
+			//		timetunnel := make(chan string, 1)
+			//		select {
+			//		case res := <-timetunnel:
+			//			fmt.Printf("result: %s\n", res)
+			select {
+			case <-done:
+				if config.Debug {
+					fmt.Fprintf(os.Stderr, "goroutine: time to exit\n")
+				}
+				return
+			case <-time.After(time.Duration(config.PollInterval) * time.Minute):
+				fmt.Fprintf(os.Stderr, "timeout: time to poll for stats\n")
+				now := time.Now()
+				mu.Lock()
+				for namespace, _ := range config.Namespaces {
+					for _, metric := range metrics[namespace] {
+						getMetric(metric, prevTick, now)
+					}
+				}
+				mu.Unlock()
+				//		for _, metric := range metrics {
+				//			fmt.Printf("metric: %v\n", metric)
+				//			getStatistic(metric, prevTick, now)
+				//		}
+				prevTick = now
+				//		}
 			}
 		}
-		mu.Unlock()
-		//		for _, metric := range metrics {
-		//			fmt.Printf("metric: %v\n", metric)
-		//			getStatistic(metric, prevTick, now)
-		//		}
-		prevTick = now
-		//		}
+	}()
 
-	}
+	sig := <-sigs
+	close(done)
+	time.Sleep(1 * time.Second)
+	fmt.Fprintf(os.Stderr, "signal %v - bye\n", sig)
 
 }
 
@@ -209,6 +229,9 @@ func updateAvailableMetrics() int {
 	for {
 		select {
 		case <-done:
+			if config.Debug {
+				fmt.Fprintf(os.Stderr, "goroutine: time to exit\n")
+			}
 			return 0
 		case <-tick:
 			if config.Debug {
