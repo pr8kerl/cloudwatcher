@@ -9,7 +9,7 @@ type Config struct {
 	Profile                  string            `json:"profile"`
 	Region                   string            `json:"region"`
 	Prefix                   string            `json:"prefix"`
-	PollInterval             int64             `json:"pollInterval"`
+	PollInterval             string            `json:"pollInterval"`
 	Namespaces               map[string]string `json:"namespaces"`
 	Debug                    bool              `json:"debug"`
 	AvailableMetricsInterval int64             `json:"refreshAvailableMetricsInterval"`

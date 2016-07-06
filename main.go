@@ -17,6 +17,7 @@ import (
 
 var (
 	prevTick time.Time
+	interval time.Duration
 	metrics  map[string][]*cloudwatch.Metric
 	svc      *cloudwatch.CloudWatch
 	config   Config
@@ -49,6 +50,11 @@ func main() {
 	err := InitialiseConfig("config.json")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error parsing config: %s\n", err)
+		os.Exit(1)
+	}
+	interval, err = time.ParseDuration(config.PollInterval)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error parsing interval: %s\n", err)
 		os.Exit(1)
 	}
 
@@ -86,7 +92,7 @@ func main() {
 					fmt.Fprintf(os.Stderr, "goroutine: time to exit\n")
 				}
 				return
-			case <-time.After(time.Duration(config.PollInterval) * time.Minute):
+			case <-time.After(interval):
 				fmt.Fprintf(os.Stderr, "timeout: time to poll for stats\n")
 				now := time.Now()
 				mu.Lock()
@@ -167,11 +173,11 @@ func getMetric(metric *cloudwatch.Metric, from time.Time, to time.Time) {
 	}
 
 	params := &cloudwatch.GetMetricStatisticsInput{
-		EndTime:    aws.Time(to),      // Required
-		MetricName: metric.MetricName, // Required
+		EndTime:    aws.Time(to.Add(-interval)), // Required
+		MetricName: metric.MetricName,           // Required
 		Namespace:  metric.Namespace,
-		Period:     aws.Int64(config.PollInterval * 60), // Required
-		StartTime:  aws.Time(from),                      // Required
+		Period:     aws.Int64(int64(interval.Seconds())), // Required
+		StartTime:  aws.Time(from.Add(-interval)),        // Required
 		Statistics: []*string{ // Required
 			aws.String("Maximum"),
 			aws.String("Average"),

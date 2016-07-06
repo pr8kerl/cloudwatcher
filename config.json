@@ -2,7 +2,7 @@
   "profile": "its-production",
   "region": "ap-southeast-2",
   "prefix": "aws.cloudwatch.its-production",
-  "pollInterval": 5,
+  "pollInterval": "5m",
   "refreshAvailableMetricsInterval": 60,
   "debug": false,
   "namespaces": {
